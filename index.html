@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Template Multiplier</title>
+  <script src="https://cdn.jsdelivr.net/npm/pizzip@3.2.0/dist/pizzip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+    .container { max-width: 920px; margin: 0 auto; padding: 2rem 1.5rem; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1rem; margin: 1.5rem 0 0.75rem; }
+    .subtitle { color: #8b949e; margin-bottom: 2rem; font-size: 0.9rem; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 1rem; }
+    .panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; }
+    .drop-zone { border: 2px dashed #30363d; border-radius: 8px; padding: 1.5rem 1rem; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+    .drop-zone:hover, .drop-zone.dragover { border-color: #58a6ff; background: #0f1620; }
+    .drop-zone p { color: #8b949e; margin-bottom: 0.35rem; }
+    .drop-zone .browse { color: #58a6ff; text-decoration: underline; cursor: pointer; }
+    label { display: block; color: #8b949e; font-size: 0.82rem; margin-bottom: 0.4rem; }
+    input[type="file"] { display: none; }
+    input[type="text"] { width: 100%; padding: 0.6rem 0.7rem; border-radius: 6px; border: 1px solid #30363d; background: #0f1117; color: #e1e4e8; font: inherit; }
+    .hint { color: #6e7681; font-size: 0.78rem; margin-top: 0.4rem; }
+    .actions { display: flex; gap: 0.75rem; margin: 1.25rem 0; flex-wrap: wrap; align-items: center; }
+    .btn { padding: 0.55rem 1rem; border-radius: 6px; border: 1px solid #30363d; background: #21262d; color: #e1e4e8; cursor: pointer; font-size: 0.85rem; transition: background 0.15s; }
+    .btn:hover { background: #30363d; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary { background: #238636; border-color: #238636; }
+    .btn.primary:hover { background: #2ea043; }
+    .file-info { color: #8b949e; font-size: 0.8rem; margin-top: 0.75rem; word-break: break-word; }
+    #results { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 0.82rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .result-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+    .err { color: #f85149; }
+    .warn { color: #d29922; }
+    .ok { color: #3fb950; }
+    .gray { color: #8b949e; }
+    .blue { color: #58a6ff; }
+    .tagline { color: #484f58; font-size: 0.75rem; margin-top: 3rem; text-align: center; font-style: italic; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Template Multiplier</h1>
+    <p class="subtitle">Generate numbered docxtemplater template variants from one master. Files are processed locally - nothing is uploaded.</p>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>1. Master template</h2>
+        <div class="drop-zone" id="masterDrop">
+          <p>Drop the quote 1 <strong>.docx</strong> master here</p>
+          <p>or <span class="browse">browse</span></p>
+        </div>
+        <input type="file" id="masterInput" accept=".docx">
+        <div class="file-info" id="masterInfo">No master selected</div>
+      </div>
+
+      <div class="panel">
+        <h2>2. Mapping JSON</h2>
+        <div class="drop-zone" id="mappingDrop">
+          <p>Drop your <strong>mapping .json</strong> here</p>
+          <p>or <span class="browse">browse</span></p>
+        </div>
+        <input type="file" id="mappingInput" accept=".json,application/json">
+        <div class="file-info" id="mappingInfo">No mapping selected</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3. Output naming</h2>
+      <label for="outputPattern">Output filename pattern</label>
+      <input id="outputPattern" type="text" placeholder="agreement{quote}.docx">
+      <div class="hint">{quote} is blank for quote 1, then becomes 2 and 3 for quote 2 and quote 3.</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="generateBtn" disabled>Generate &amp; Download</button>
+      <button class="btn" id="clearBtn">Clear</button>
+      <span class="file-info" id="statusText"></span>
+    </div>
+
+    <div id="results"></div>
+
+    <p class="tagline">A small browser tool for docxtemplater-style DOCX templates. Not affiliated with docxtemplater.</p>
+  </div>
+
+<script>
+let masterFile = null;
+let mappingFile = null;
+let mapping = null;
+
+const els = {
+  masterDrop: document.getElementById("masterDrop"),
+  masterInput: document.getElementById("masterInput"),
+  masterInfo: document.getElementById("masterInfo"),
+  mappingDrop: document.getElementById("mappingDrop"),
+  mappingInput: document.getElementById("mappingInput"),
+  mappingInfo: document.getElementById("mappingInfo"),
+  outputPattern: document.getElementById("outputPattern"),
+  generateBtn: document.getElementById("generateBtn"),
+  clearBtn: document.getElementById("clearBtn"),
+  statusText: document.getElementById("statusText"),
+  results: document.getElementById("results"),
+};
+
+function setResult(html) {
+  els.results.innerHTML = `<div class="result-section">${html}</div>`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+function updateReadyState() {
+  const ready = masterFile && mapping && els.outputPattern.value.trim().length > 0;
+  els.generateBtn.disabled = !ready;
+  els.statusText.textContent = ready ? "Ready" : "Select a master, mapping, and output pattern";
+}
+
+function wireDropZone(dropZone, input, onFile) {
+  dropZone.addEventListener("click", () => input.click());
+  dropZone.addEventListener("dragover", event => {
+    event.preventDefault();
+    dropZone.classList.add("dragover");
+  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", event => {
+    event.preventDefault();
+    dropZone.classList.remove("dragover");
+    const file = event.dataTransfer.files[0];
+    if (file) onFile(file);
+  });
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (file) onFile(file);
+  });
+}
+
+function suggestPattern(fileName) {
+  if (!fileName.toLowerCase().endsWith(".docx")) return "";
+  const base = fileName.slice(0, -5);
+  const match = base.match(/^(.*?)(_[^_]+_\d+)$/);
+  if (match) return `${match[1]}{quote}${match[2]}.docx`;
+  return `${base}{quote}.docx`;
+}
+
+async function readArrayBuffer(file) {
+  return await file.arrayBuffer();
+}
+
+async function readJson(file) {
+  return JSON.parse(await file.text());
+}
+
+function getXmlFileNames(zip) {
+  return Object.keys(zip.files)
+    .filter(name => !zip.files[name].dir)
+    .filter(name => name.startsWith("word/") && name.endsWith(".xml"))
+    .sort();
+}
+
+function decodeXmlText(value) {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function encodeXmlText(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function extractTextSegments(xml) {
+  const segments = [];
+  const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+  let match;
+  while ((match = re.exec(xml)) !== null) {
+    const openEnd = match[0].indexOf(">") + 1;
+    const encodedStart = match.index + openEnd;
+    const encodedEnd = encodedStart + match[1].length;
+    segments.push({ encodedStart, encodedEnd, text: decodeXmlText(match[1]) });
+  }
+  return segments;
+}
+
+function buildFlatText(segments) {
+  let flat = "";
+  const indexedSegments = segments.map((segment, index) => {
+    const flatStart = flat.length;
+    flat += segment.text;
+    return { ...segment, index, flatStart, flatEnd: flat.length };
+  });
+  return { flat, segments: indexedSegments };
+}
+
+function extractTags(flat) {
+  const tags = [];
+  let inTag = false;
+  let tagStart = -1;
+  for (let i = 0; i < flat.length; i++) {
+    if (flat[i] === "{") {
+      inTag = true;
+      tagStart = i;
+    } else if (flat[i] === "}" && inTag) {
+      inTag = false;
+      tags.push({ raw: flat.substring(tagStart, i + 1), offset: tagStart });
+    }
+  }
+  return tags;
+}
+
+function extractInventory(zip) {
+  const dataFields = new Set();
+  const components = new Set();
+  const quoteLiterals = new Set();
+  const rawTags = [];
+
+  for (const fileName of getXmlFileNames(zip)) {
+    const xml = zip.file(fileName).asText();
+    const { flat } = buildFlatText(extractTextSegments(xml));
+    for (const tag of extractTags(flat)) {
+      rawTags.push(tag.raw);
+      for (const match of tag.raw.matchAll(/\bmodel\.data\.([A-Za-z_][A-Za-z0-9_]*)\b/g)) dataFields.add(match[1]);
+      for (const match of tag.raw.matchAll(/\bmodel\.([A-Za-z_][A-Za-z0-9_]*components)\b/g)) components.add(match[1]);
+      for (const match of tag.raw.matchAll(/\bQuote [0-9]+\b/g)) quoteLiterals.add(match[0]);
+    }
+  }
+
+  return {
+    dataFields: Array.from(dataFields),
+    components: Array.from(components),
+    quoteLiterals: Array.from(quoteLiterals),
+    rawTags,
+  };
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function validateMasterMapping(masterInventory, config) {
+  const errors = [];
+  const jobWide = new Set(config.jobWideDataFields || []);
+  const quoteSpecific = new Set(config.quoteSpecificDataFields || []);
+  const componentSources = new Set(Object.keys(config.componentMappings || {}));
+
+  for (const field of masterInventory.dataFields) {
+    if (!jobWide.has(field) && !quoteSpecific.has(field)) {
+      errors.push(`model.data.${field} is not listed as quote-specific or job-wide.`);
+    }
+  }
+
+  for (const component of masterInventory.components) {
+    if (!componentSources.has(component)) {
+      errors.push(`model.${component} is not listed in componentMappings.`);
+    }
+  }
+
+  return errors;
+}
+
+function buildRules(config, quoteNumber) {
+  const sourceQuote = config.sourceQuote || 1;
+  const rules = [];
+
+  for (const source of config.quoteSpecificDataFields || []) {
+    if (quoteNumber === sourceQuote) continue;
+    rules.push({
+      regex: new RegExp(`\\bmodel\\.data\\.${escapeRegExp(source)}\\b`, "g"),
+      target: `model.data.${source}${quoteNumber}`,
+    });
+  }
+
+  for (const [source, targets] of Object.entries(config.componentMappings || {})) {
+    const target = targets[String(quoteNumber)] || targets[quoteNumber];
+    if (!target || target === source) continue;
+    rules.push({
+      regex: new RegExp(`\\bmodel\\.${escapeRegExp(source)}\\b`, "g"),
+      target: `model.${target}`,
+    });
+  }
+
+  for (const [source, targets] of Object.entries(config.quoteLiteralMappings || {})) {
+    const target = targets[String(quoteNumber)] || targets[quoteNumber];
+    if (!target || target === source) continue;
+    rules.push({ regex: new RegExp(escapeRegExp(source), "g"), target });
+  }
+
+  return rules;
+}
+
+function transformTag(rawTag, rules) {
+  let transformed = rawTag;
+  for (const rule of rules) transformed = transformed.replace(rule.regex, rule.target);
+  return transformed;
+}
+
+function findSegmentOverlaps(segments, start, end) {
+  return segments
+    .filter(segment => segment.flatStart < end && segment.flatEnd > start)
+    .map(segment => ({
+      segment,
+      start: Math.max(start, segment.flatStart) - segment.flatStart,
+      end: Math.min(end, segment.flatEnd) - segment.flatStart,
+    }));
+}
+
+function replaceTagsInXml(xml, rules) {
+  const { flat, segments } = buildFlatText(extractTextSegments(xml));
+  const tags = extractTags(flat);
+  const modificationsBySegment = new Map();
+  let replacementCount = 0;
+
+  for (const tag of tags) {
+    const transformed = transformTag(tag.raw, rules);
+    if (transformed === tag.raw) continue;
+    const overlaps = findSegmentOverlaps(segments, tag.offset, tag.offset + tag.raw.length);
+    overlaps.forEach((overlap, index) => {
+      const existing = modificationsBySegment.get(overlap.segment.index) || [];
+      existing.push({ start: overlap.start, end: overlap.end, replacement: index === 0 ? transformed : "" });
+      modificationsBySegment.set(overlap.segment.index, existing);
+    });
+    replacementCount++;
+  }
+
+  if (replacementCount === 0) return { xml, replacementCount };
+
+  const changedSegments = segments.map(segment => {
+    const modifications = modificationsBySegment.get(segment.index);
+    if (!modifications) return segment;
+    let text = segment.text;
+    for (const mod of modifications.sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, mod.start) + mod.replacement + text.slice(mod.end);
+    }
+    return { ...segment, text };
+  });
+
+  let rewrittenXml = xml;
+  for (const segment of changedSegments.slice().sort((a, b) => b.encodedStart - a.encodedStart)) {
+    if (!modificationsBySegment.has(segment.index)) continue;
+    rewrittenXml = rewrittenXml.slice(0, segment.encodedStart) + encodeXmlText(segment.text) + rewrittenXml.slice(segment.encodedEnd);
+  }
+
+  return { xml: rewrittenXml, replacementCount };
+}
+
+function outputName(pattern, quoteNumber, sourceQuote) {
+  return pattern.replace(/\{quote\}/g, quoteNumber === sourceQuote ? "" : String(quoteNumber));
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function handleMaster(file) {
+  masterFile = file;
+  els.masterInfo.textContent = file.name;
+  if (!els.outputPattern.value.trim()) els.outputPattern.value = suggestPattern(file.name);
+  updateReadyState();
+}
+
+async function handleMapping(file) {
+  try {
+    mappingFile = file;
+    mapping = await readJson(file);
+    els.mappingInfo.textContent = file.name;
+    setResult(`<span class="ok">Loaded mapping JSON.</span>`);
+  } catch (error) {
+    mappingFile = null;
+    mapping = null;
+    els.mappingInfo.textContent = "No mapping selected";
+    setResult(`<span class="err">Mapping JSON could not be parsed: ${escapeHtml(error.message)}</span>`);
+  }
+  updateReadyState();
+}
+
+async function generate() {
+  try {
+    els.generateBtn.disabled = true;
+    els.statusText.textContent = "Generating...";
+    const sourceQuote = mapping.sourceQuote || 1;
+    const targetQuotes = mapping.targetQuotes || [1, 2, 3];
+    const pattern = els.outputPattern.value.trim();
+    const masterBuffer = await readArrayBuffer(masterFile);
+    const masterZip = new PizZip(masterBuffer);
+    const masterInventory = extractInventory(masterZip);
+    const mappingErrors = validateMasterMapping(masterInventory, mapping);
+    if (mappingErrors.length > 0) {
+      setResult(`<span class="err">Cannot generate. Mapping is incomplete:</span>\n${mappingErrors.map(error => `- ${escapeHtml(error)}`).join("\n")}`);
+      return;
+    }
+
+    const log = [];
+    for (const quoteNumber of targetQuotes) {
+      const fileName = outputName(pattern, quoteNumber, sourceQuote);
+      if (quoteNumber === sourceQuote) {
+        downloadBlob(new Blob([masterBuffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), fileName);
+        log.push(`<span class="ok">OK</span> quote ${quoteNumber}: ${escapeHtml(fileName)} (master clone)`);
+        continue;
+      }
+
+      const zip = new PizZip(masterBuffer);
+      const rules = buildRules(mapping, quoteNumber);
+      let replacements = 0;
+      for (const xmlName of getXmlFileNames(zip)) {
+        const result = replaceTagsInXml(zip.file(xmlName).asText(), rules);
+        if (result.replacementCount > 0) {
+          zip.file(xmlName, result.xml);
+          replacements += result.replacementCount;
+        }
+      }
+
+      const output = zip.generate({ type: "blob", compression: "DEFLATE" });
+      downloadBlob(output, fileName);
+      log.push(`<span class="ok">OK</span> quote ${quoteNumber}: ${escapeHtml(fileName)} (${replacements} tag replacements)`);
+    }
+
+    setResult(log.join("\n"));
+  } catch (error) {
+    setResult(`<span class="err">Generation failed: ${escapeHtml(error.message)}</span>`);
+  } finally {
+    updateReadyState();
+  }
+}
+
+function clearAll() {
+  masterFile = null;
+  mappingFile = null;
+  mapping = null;
+  els.masterInput.value = "";
+  els.mappingInput.value = "";
+  els.outputPattern.value = "";
+  els.masterInfo.textContent = "No master selected";
+  els.mappingInfo.textContent = "No mapping selected";
+  els.results.innerHTML = "";
+  updateReadyState();
+}
+
+wireDropZone(els.masterDrop, els.masterInput, handleMaster);
+wireDropZone(els.mappingDrop, els.mappingInput, handleMapping);
+els.outputPattern.addEventListener("input", updateReadyState);
+els.generateBtn.addEventListener("click", generate);
+els.clearBtn.addEventListener("click", clearAll);
+updateReadyState();
+</script>
+</body>
+</html>
